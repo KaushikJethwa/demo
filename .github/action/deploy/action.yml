@@ -105,10 +105,13 @@ runs:
           cd ${{ inputs.target }}
 
           # Stop old app
-          set +e   # disable exit on error temporarily
           echo "🛑 Stopping old app..."
-          pkill -f 'java -jar'
-          set -e   # re-enable strict mode
+          if pgrep -f "java -jar" > /dev/null; then
+          pkill -f "java -jar" || true
+          echo "Old app stopped"
+          else
+          echo "No running app found"
+          fi
 
           # Prepare new JAR
           echo "📦 Preparing new JAR..."
