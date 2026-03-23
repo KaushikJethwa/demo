@@ -1,0 +1,139 @@
+name: Deploy Spring Boot via SSH
+description: Secure Spring Boot deployment to DigitalOcean droplet
+
+inputs:
+  host:
+    description: Server IP
+    required: true
+  user:
+    description: SSH User
+    required: true
+  key:
+    description: SSH Private Key
+    required: true
+  target:
+    description: Target directory on server
+    required: true
+  do_token:
+    description: DigitalOcean API Token
+    required: true
+  firewall_id:
+    description: Firewall ID
+    required: true
+
+runs:
+  using: "composite"
+
+  steps:
+
+    # ---------------------------------------------------
+    # 1️⃣ Get GitHub Runner Public IP
+    # ---------------------------------------------------
+    - name: Get Runner IP
+      id: runner_ip
+      shell: bash
+      run: |
+        IP=$(curl -s https://checkip.amazonaws.com || curl -s https://ifconfig.me)
+
+        if [[ ! $IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ Invalid IP detected: $IP"
+          exit 1
+        fi
+
+        echo "Runner IP: $IP"
+        echo "ip=$IP" >> $GITHUB_OUTPUT
+
+
+    # ---------------------------------------------------
+    # 2️⃣ Install doctl
+    # ---------------------------------------------------
+    - name: Install doctl
+      uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ inputs.do_token }}
+
+
+    # ---------------------------------------------------
+    # 3️⃣ Open Firewall for SSH
+    # ---------------------------------------------------
+    - name: Open Firewall Access
+      shell: bash
+      run: |
+        echo "Opening firewall for ${{ steps.runner_ip.outputs.ip }}"
+        doctl compute firewall add-rules ${{ inputs.firewall_id }} \
+          --inbound-rules "protocol:tcp,ports:22,address:${{ steps.runner_ip.outputs.ip }}/32"
+
+
+    # ---------------------------------------------------
+    # 4️⃣ Build Spring Boot JAR
+    # ---------------------------------------------------
+    - name: Build JAR
+      shell: bash
+      run: |
+        mvn clean package -DskipTests
+
+
+    # ---------------------------------------------------
+    # 5️⃣ Copy JAR to Server
+    # ---------------------------------------------------
+    - name: Copy JAR to Server
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ inputs.host }}
+        username: ${{ inputs.user }}
+        key: ${{ inputs.key }}
+        source: "target/*.jar"
+        target: "${{ inputs.target }}"
+
+
+    # ---------------------------------------------------
+    # 6️⃣ Deploy on Server
+    # ---------------------------------------------------
+    - name: Deploy Spring Boot
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ inputs.host }}
+        username: ${{ inputs.user }}
+        key: ${{ inputs.key }}
+        script: |
+          set -e
+
+          echo "----------------------------------------"
+          echo "🚀 SPRING BOOT DEPLOYMENT STARTED"
+          echo "----------------------------------------"
+
+          cd ${{ inputs.target }}
+
+          # Stop old app
+          echo "🛑 Stopping old app..."
+          pkill -f 'java -jar' || true
+
+          # Prepare new JAR
+          echo "📦 Preparing new JAR..."
+          if ls target/*.jar 1> /dev/null 2>&1; then
+            mv target/*.jar app.jar
+          else
+            mv *.jar app.jar
+          fi
+
+          # Start app
+          echo "🔄 Restarting Spring Boot service..."
+          sudo systemctl restart springboot
+
+          echo "----------------------------------------"
+          echo "✅ DEPLOYMENT SUCCESSFUL"
+          echo "----------------------------------------"
+
+
+    # ---------------------------------------------------
+    # 7️⃣ Always Close Firewall
+    # ---------------------------------------------------
+    - name: Close Firewall Access
+      if: always()
+      shell: bash
+      run: |
+        if [[ -n "${{ steps.runner_ip.outputs.ip }}" ]]; then
+          echo "Closing firewall for ${{ steps.runner_ip.outputs.ip }}"
+          doctl compute firewall remove-rules ${{ inputs.firewall_id }} \
+            --inbound-rules "protocol:tcp,ports:22,address:${{ steps.runner_ip.outputs.ip }}/32"
+        fi

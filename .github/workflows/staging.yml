@@ -1,0 +1,24 @@
+name: Digital Ocean CICD Pipeline - Staging Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Spring Boot
+        uses: ./.github/action/deploy
+        with:
+          host: ${{ secrets.SERVER_STAGING_IP }}
+          user: ${{ secrets.SERVER_STAGING_USER }}
+          key: ${{ secrets.SERVER_STAGING_SSH_KEY }}
+          target: ${{ secrets.SERVER_STAGING_TARGET_PATH }}
+          do_token: ${{ secrets.SERVER_STAGING_DO_TOKEN }}
+          firewall_id: ${{ secrets.SERVER_STAGING_FIREWALL_ID }}
