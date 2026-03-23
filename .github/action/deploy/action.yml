@@ -97,25 +97,32 @@ runs:
         key: ${{ inputs.key }}
         script: |
           set -e
+          
           echo "----------------------------------------"
           echo "🚀 SPRING BOOT DEPLOYMENT STARTED"
           echo "----------------------------------------"
           
           cd ${{ inputs.target }}
+          
           echo "🧹 Cleaning old JAR..."
-          rm -f app.jar
+          rm -f spring-cicd.jar
           
           echo "📦 Preparing new JAR..."
           
-          # Look inside target folder
+          # Get JAR from target folder
           JAR_FILE=$(ls target/*.jar | head -n 1)
           
           if [ -z "$JAR_FILE" ]; then
-          echo "❌ No JAR file found in target folder!"
-          exit 1
+          	echo "❌ No JAR file found in target folder!"
+          	exit 1
           fi
           
-          mv "$JAR_FILE" app.jar
+          # Rename to match service
+          mv "$JAR_FILE" spring-cicd.jar
+          
+          # Optional: clean target folder
+          rm -rf target
+          
           echo "🔄 Restarting Spring Boot service..."
           sudo systemctl restart java-cicd-test
           
